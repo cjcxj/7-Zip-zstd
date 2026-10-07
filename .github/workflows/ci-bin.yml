@@ -1,0 +1,84 @@
+
+# Minimal helper workflow: build only what the extract-triggers test needs
+# (7z.dll, 7zG.exe, 7z.exe for x64 without darkmode) and publish those files
+# to the orphan branch "ci-bin", so they can be fetched without GitHub auth.
+# Delete this file to stop publishing.
+name: CI binaries to branch
+on:
+  push:
+    branches: [ feature/extract-triggers ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  win-x64-ndm:
+    runs-on: windows-2025-vs2026
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v3 # nosonar
+        with:
+          msbuild-architecture: x64
+
+      - name: Find vcvarsall path
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`vswhere -latest -property installationPath`) do (
+            echo VCVARSALL_PATH=%%i\VC\Auxiliary\Build\vcvarsall.bat >> %GITHUB_ENV%
+          )
+
+      - name: Compiling x64 (no darkmode)
+        shell: cmd
+        run: |
+          call "%VCVARSALL_PATH%" x64
+          set WDIR=%cd%
+          set PLATFORM=x64
+          set SUBSYS=5.02
+          set ROOT=%cd%\CPP\7zip
+          set ZIP7_DARKMODE=0
+          set OUTDIR=%WDIR%\ci-bin
+          mkdir %OUTDIR%
+
+          set LFLAGS=/SUBSYSTEM:WINDOWS,%SUBSYS%
+          cd %ROOT%\Bundles\Format7zF
+          nmake /NOLOGO || exit 1
+          copy %PLATFORM%\7z.dll %OUTDIR%\ || exit 1
+          cd %ROOT%\UI\GUI
+          nmake /NOLOGO || exit 1
+          copy %PLATFORM%\7zG.exe %OUTDIR%\ || exit 1
+          cd %ROOT%\UI\FileManager
+          nmake /NOLOGO || exit 1
+          copy %PLATFORM%\7zFM.exe %OUTDIR%\ || exit 1
+
+          set LFLAGS=/SUBSYSTEM:CONSOLE,%SUBSYS%
+          cd %ROOT%\UI\Console
+          nmake /NOLOGO || exit 1
+          copy %PLATFORM%\7z.exe %OUTDIR%\ || exit 1
+
+          dir %OUTDIR%
+
+      - name: Show build log tail on failure
+        if: failure()
+        shell: cmd
+        run: |
+          echo Build of the minimal x64 set failed.
+
+      - name: Publish to branch ci-bin
+        shell: bash
+        run: |
+          set +x
+          cd ci-bin
+          git init -q .
+          git config user.name github-actions
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -qm "CI binaries: windows x64 (no darkmode) @ ${GITHUB_SHA:0:8}"
+          AUTH=$(printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64 | tr -d '\n')
+          git -c http.extraHeader="AUTHORIZATION: basic ${AUTH}" \
+            push -f "https://github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:refs/heads/ci-bin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
