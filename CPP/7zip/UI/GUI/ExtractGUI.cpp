@@ -269,7 +269,11 @@ static bool MatchGlob(const wchar_t *p, const wchar_t *s)
         return false;
     }
     else if (ToLowerAscii(*s) != ToLowerAscii(pc))
-      return false;
+    {
+      // '\\' and '/' are the same separator here:
+      if (!IsPathSep(pc) || !IsPathSep(*s))
+        return false;
+    }
     p++;
     s++;
   }
