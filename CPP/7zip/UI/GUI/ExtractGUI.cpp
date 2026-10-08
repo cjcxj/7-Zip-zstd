@@ -210,6 +210,13 @@ struct CExtractTrigger
   bool IsDefined() const { return !Dest.IsEmpty() && !Cmd.IsEmpty(); }
 };
 
+// NExplorer::ShowErrorMessage() is muted when 7zG runs with "-y", which is how
+// 7zFM calls it, so trigger errors would never be seen. Always show them here.
+static void ShowTriggerError(HWND hwnd, const UString &text)
+{
+  ::MessageBoxW(hwnd, text, L"7-Zip-Zstandard", MB_OK | MB_ICONSTOP);
+}
+
 static bool IsPathSep(wchar_t c) { return c == L'\\' || c == L'/'; }
 
 static void TrimPathTail(UString &s)
@@ -350,7 +357,7 @@ static bool LoadTriggers(CObjectVector<CExtractTrigger> &triggers)
     s.Add_LF();
     s.Add_LF();
     s += NError::MyFormatMessage(lastError);
-    ShowErrorMessage(s);
+    ShowTriggerError(NULL, s);
     return false;
   }
 
@@ -491,7 +498,7 @@ static bool RunTriggerCommand(HWND hwnd, const UString &cmd, const UString &work
     s.Add_LF();
     s.Add_LF();
     s += NError::MyFormatMessage(::GetLastError());
-    ShowErrorMessage(hwnd, s);
+    ShowTriggerError(hwnd, s);
     return false;
   }
 
@@ -555,7 +562,10 @@ static void RunExtractTriggers(HWND hwnd, const FString &outputDir, const UStrin
     {
       UString s = L"The trigger command exited with code ";
       s.Add_UInt32(exitCode);
-      ShowErrorMessage(hwnd, s);
+      s.Add_LF();
+      s.Add_LF();
+      s += cmd;
+      ShowTriggerError(hwnd, s);
       return;
     }
   }
